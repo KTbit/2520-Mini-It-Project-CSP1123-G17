@@ -29,7 +29,7 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
                     <li class="nav-item">
-                        <a class="nav-link" href="index.html">Home</a>
+                        <a class="nav-link" href="{{ url_for('index') }}">Home</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="recipe_section/recipebrowse.html">Search Recipes</a>
@@ -37,7 +37,7 @@
                     
                 <!--after user is logged in-->
                         <li class="nav-item">
-                            <a class="nav-link" href="user/userdashboard.html">My Recipes</a>
+                            <a class="nav-link" href="{{ url_for('user_dashboard') }}">My Recipes</a>
                         </li>
                         <li class="nav-item dropdown">
                             <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown">
@@ -46,13 +46,13 @@
                             <ul class="dropdown-menu dropdown-menu-end">
 
                                <!-- If current user is admin; create a function that determines if user is admin or not-->
-                                    <li><a class="dropdown-item" href="admin/admin_dashboard.html">
+                                    <li><a class="dropdown-item" href="{{ url_for('admin_dashboard') }}">
                                         <i class="bi bi-shield-lock"></i> Admin Dashboard
                                     </a></li>
                                     <li><hr class="dropdown-divider"></li>
 
                               <!--for logging out-->
-                                <li><a class="dropdown-item" href="logout.html">
+                                <li><a class="dropdown-item" href="{{ url_for('user_logout') }}">
                                     <i class="bi bi-box-arrow-right"></i> Logout
                                 </a></li>
                             </ul>
@@ -60,10 +60,10 @@
 
                    <!--logging in / registering buttons-->
                         <li class="nav-item">
-                            <a class="nav-link" href="user/user_login.html">Login</a>
+                            <a class="nav-link" href="{{ url_for('user_login') }}">Login</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link btn btn-outline-light ms-2" href="user/user_register.html">Sign Up</a>
+                            <a class="nav-link btn btn-outline-light ms-2" href="{{ url_for('user_register') }}">Sign Up</a>
                         </li>
                     </ul>
                 </div>
