@@ -31,25 +31,25 @@ def index():
 # User authentication (logging in/out, registering) routes
 
 @app.route('/register', methods=['GET', 'POST'])
-def register():
+def  user_register():
     if current_user.is_authenticated:
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('user_dashboard'))
     
     if request.method == 'POST':
         username = request.form.get('username')
         email = request.form.get('email')
         password = request.form.get('password')
         
-        # Validation
+        # check if username exists...
         if User.query.filter_by(username=username).first():
             flash('Username already exists', 'danger')
-            return redirect(url_for('register'))
+            return redirect(url_for('user_register'))
         
         if User.query.filter_by(email=email).first():
             flash('Email already registered', 'danger')
-            return redirect(url_for('register'))
-        
-        # Create new user
+            return redirect(url_for('user_register'))
+    
+        # for registering new users into the system
         new_user = User(username=username, email=email)
         new_user.set_password(password)
         
@@ -57,14 +57,14 @@ def register():
         db.session.commit()
         
         flash('Registration successful! Please login.', 'success')
-        return redirect(url_for('login'))
+        return redirect(url_for('user_login'))
     
     return render_template('user/user_register.html')
 
 @app.route('/login', methods=['GET', 'POST'])
-def login():
+def user_login(): 
     if current_user.is_authenticated:
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('user_dashboard'))
     
     if request.method == 'POST':
         username = request.form.get('username')
@@ -76,7 +76,7 @@ def login():
             login_user(user)
             flash('Login successful!', 'success')
             next_page = request.args.get('next')
-            return redirect(next_page) if next_page else redirect(url_for('dashboard'))
+            return redirect(next_page) if next_page else redirect(url_for('user_dashboard'))
         else:
             flash('Invalid username or password', 'danger')
     
@@ -84,31 +84,32 @@ def login():
 
 @app.route('/logout')
 @login_required
-def logout():
+def user_logout():
     logout_user()
     flash('You have been logged out.', 'info')
     return redirect(url_for('index'))
 
-# dashboard route 
+# User dashboard route
 
 @app.route('/dashboard')
 @login_required
-def dashboard():
+def user_dashboard():
     saved_recipes = SavedRecipe.query.filter_by(user_id=current_user.id).all()
-    return render_template('dashboard.html', saved_recipes=saved_recipes)
+    return render_template('user/userdashboard.html', saved_recipes=saved_recipes)
 
-# recipe routes
+# Recipes route
 
-@app.route('/recipes/search', methods=['GET', 'POST'])
-def search_recipes():
-    if request.method == 'POST':
-        ingredients = request.form.get('ingredients')
-        recipes = search_recipes_by_ingredients(ingredients)
-        return render_template('recipe_section/recipebrowse.html', recipes=recipes, query=ingredients)
-    
-    return render_template('recipe_section/recipebrowse.html', recipes=None)
+@app.route('/recipes/browse')
+def recipe_browse():
+    # to add recipe browsing logic
+    return render_template('recipe_section/recipebrowse.html')
 
-#recipe detail page...saving recipes feature / page....to be added
+@app.route('/recipes/<int:recipe_id>')
+def recipe_detail(recipe_id):
+    # to add recipe detail logic
+    return render_template('recipe_section/recipedetail.html', recipe_id=recipe_id)
+
+#admin routes
 
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
@@ -130,17 +131,32 @@ def admin_login():
     
     return render_template('admin/admin_login.html')
 
+#admin route(s) WIP - maybe admins can register / add new admins under their supervision(?)
+
 @app.route('/admin/dashboard')
 @login_required
 def admin_dashboard():
     if not current_user.is_admin:
-        flash('Access denied', 'danger')
+        flash('Access denied. Admin only.', 'danger')
         return redirect(url_for('index'))
     
     users = User.query.all()
-    return render_template('admin/admin_dashboard.html', users=users)
+    return render_template('admin/admin_registration.html', users=users)
 
-#running the app
+# for admin registration
+
+@app.route('/admin/register', methods=['GET', 'POST'])
+@login_required
+def admin_register():
+    if not current_user.is_admin:
+        flash('Access denied. Admin only.', 'danger')
+        return redirect(url_for('index'))
+    
+    return render_template('admin/admin_registration.html')
+
+# run the app
 
 if __name__ == '__main__':
     app.run(debug=True)
+
+
