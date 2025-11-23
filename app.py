@@ -89,7 +89,7 @@ def logout():
     flash('You have been logged out.', 'info')
     return redirect(url_for('index'))
 
-#user routes - logging in/out, registering, viewing dashboard after login / registration ..to be added; seeing dashboard page via profile button click
+# dashboard route 
 
 @app.route('/dashboard')
 @login_required
@@ -108,41 +108,7 @@ def search_recipes():
     
     return render_template('recipe_section/recipebrowse.html', recipes=None)
 
-@app.route('/recipes/<int:recipe_id>')
-def recipe_detail(recipe_id):
-    recipe = get_recipe_details(recipe_id)
-    if not recipe:
-        flash('Recipe not found', 'danger')
-        return redirect(url_for('search_recipes'))
-    
-    return render_template('recipe_section/recipedetail.html', recipe=recipe)
-
-@app.route('/recipes/<int:recipe_id>/save', methods=['POST'])
-@login_required
-def save_recipe(recipe_id):
-    # see if the recipe has already been saved by the user
-    existing = SavedRecipe.query.filter_by(user_id=current_user.id, recipe_id=recipe_id).first()
-    if existing:
-        flash('Recipe already saved', 'info')
-        return redirect(url_for('recipe_detail', recipe_id=recipe_id))
-    
-    # Get recipe name from API
-    recipe = get_recipe_details(recipe_id)
-    if not recipe:
-        flash('Could not save recipe', 'danger')
-        return redirect(url_for('search_recipes'))
-    
-    saved_recipe = SavedRecipe(
-        user_id=current_user.id,
-        recipe_id=recipe_id,
-        recipe_name=recipe['title']
-    )
-    
-    db.session.add(saved_recipe)
-    db.session.commit()
-    
-    flash('Recipe saved!', 'success')
-    return redirect(url_for('recipe_detail', recipe_id=recipe_id))
+#recipe detail page...saving recipes feature / page....to be added
 
 # admin routes - login, viewing admin dashboard
 
