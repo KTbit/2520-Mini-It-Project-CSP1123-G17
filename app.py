@@ -89,7 +89,7 @@ def logout():
     flash('You have been logged out.', 'info')
     return redirect(url_for('index'))
 
-# ============= USER ROUTES =============
+#user routes - logging in/out, registering, viewing dashboard after login / registration ..to be added; seeing dashboard page via profile button click
 
 @app.route('/dashboard')
 @login_required
@@ -97,7 +97,7 @@ def dashboard():
     saved_recipes = SavedRecipe.query.filter_by(user_id=current_user.id).all()
     return render_template('dashboard.html', saved_recipes=saved_recipes)
 
-# ============= RECIPE ROUTES =============
+# recipe routes
 
 @app.route('/recipes/search', methods=['GET', 'POST'])
 def search_recipes():
@@ -144,7 +144,7 @@ def save_recipe(recipe_id):
     flash('Recipe saved!', 'success')
     return redirect(url_for('recipe_detail', recipe_id=recipe_id))
 
-# ============= ADMIN ROUTES =============
+# admin routes - login, viewing admin dashboard
 
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
@@ -176,7 +176,7 @@ def admin_dashboard():
     users = User.query.all()
     return render_template('admin/admin_dashboard.html', users=users)
 
-# ============= RUN APP =============
+#running the app
 
 if __name__ == '__main__':
     app.run(debug=True)
