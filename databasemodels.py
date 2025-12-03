@@ -22,16 +22,14 @@ class User(UserMixin, db.Model):
     shopping_lists = db.relationship("ShoppingList", backref="user", lazy=True)
 
     def set_password(self, password: str) -> None:
-        """Hash and store the user's password."""
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password: str) -> bool:
-        """Check a plaintext password against the stored hash."""
         return check_password_hash(self.password_hash, password)
 
 
 class SavedRecipe(db.Model):
-    """Recipes that a user has chosen to save/favourite."""
+   
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
@@ -44,12 +42,6 @@ class SavedRecipe(db.Model):
 
 
 class ShoppingList(db.Model):
-    """Shopping list entries created from recipes for a given user.
-
-    For simplicity, each entry represents one recipe added to the shopping list,
-    and stores a JSON-encoded list of ingredient strings.
-    """
-
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     recipe_id = db.Column(db.Integer, nullable=False)
@@ -58,7 +50,6 @@ class ShoppingList(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def ingredients(self):
-        """Return the ingredients as a Python list of strings."""
         import json as _json
         try:
             return _json.loads(self.ingredients_json)
