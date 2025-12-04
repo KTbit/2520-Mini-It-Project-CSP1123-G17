@@ -6,26 +6,62 @@ from datetime import datetime
 # Single SQLAlchemy instance, initialised in app.py
 db = SQLAlchemy()
 
+follows = db.Table(
+    'follows',
+    db.Column('follower_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
+    db.Column('followed_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
+    db.Column('created_at', db.DateTime, default=datetime.utcnow)
+)
 
-class User(UserMixin, db.Model):
-    __tablename__ = "user"
-
+class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(200), nullable=False)
+    email = db.Column(db.String(200), unique=True, nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
     is_admin = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    posts = db.relationship('Post', backref='author', lazy='dynamic')
+    comments = db.relationship('Comment', backref='author', lazy='dynamic')
 
-    # Relationships
+    followed = db.relationship(
+        'User', secondary=follows,
+        primaryjoin=(follows.c.follower_id == id),
+        secondaryjoin=(follows.c.followed_id == id),
+        backref=db.backref('followers', lazy='dynamic'), lazy='dynamic'
+    )
+
+    def set_password(self, pw):
+        self.password_hash = generate_password_hash(pw)
+
+    def check_password(self, pw):
+        return check_password_hash(self.password_hash, pw)
+    
     saved_recipes = db.relationship("SavedRecipe", backref="user", lazy=True)
     shopping_lists = db.relationship("ShoppingList", backref="user", lazy=True)
 
-    def set_password(self, password: str) -> None:
-        self.password_hash = generate_password_hash(password)
 
-    def check_password(self, password: str) -> bool:
-        return check_password_hash(self.password_hash, password)
+class Post(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    spoonacular_id = db.Column(db.Integer)  # recipe id from Spoonacular
+    title = db.Column(db.String(300))
+    image = db.Column(db.String(500))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    comments = db.relationship('Comment', backref='post', lazy='dynamic')
+
+class Comment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'))
+    body = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class RecipeCache(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    spoonacular_id = db.Column(db.Integer, unique=True, index=True)
+    json_blob = db.Column(db.JSON)  # store fetched JSON (incl. priceBreakdown)
+    price_per_serving = db.Column(db.Float)
+    ready_in_minutes = db.Column(db.Integer)
+    last_fetched = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class SavedRecipe(db.Model):

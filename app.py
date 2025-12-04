@@ -7,6 +7,8 @@ from flask import (
     redirect,
     url_for,
     flash,
+    abort,
+    make_response
 )
 from flask_login import (
     LoginManager,
@@ -15,14 +17,23 @@ from flask_login import (
     login_required,
     current_user,
 )
-from databasemodels import db, User, SavedRecipe, ShoppingList
+
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from io import BytesIO
+
+from functools import wraps
+from databasemodels import db, User, SavedRecipe, ShoppingList, Post
 from config import Config
 from utilities import search_recipes_by_ingredients, get_recipe_details
+from utilities import get_recipe_cached
 
 
-# -------------------------------------------------
-# Application factory
-# -------------------------------------------------
+
+
 app = Flask(__name__)
 app.config.from_object(Config)
 
@@ -48,39 +59,56 @@ with app.app_context():
     db.create_all()
 
 
-# -------------------------------------------------
-# Routes: Public
-# -------------------------------------------------
+
 @app.route("/")
 def index():
-    """Homepage with search form."""
     return render_template("index.html")
 
+#WEEK 5 - added category filtering based on price and time taken - lowest to highest, vice versa (modified recipebrowse route)
 
 @app.route("/recipes/browse")
 def recipe_browse():
-    """Browse/search recipes by ingredients.
-
-    Expects a query parameter 'ingredients' in the URL, e.g.:
-
-        /recipes/browse?ingredients=egg,tomato,cheese
-    """
     ingredients = request.args.get("ingredients", "", type=str).strip()
+    sort_by = request.args.get("sort", "relevance")  # New: sort parameter
+    max_time = request.args.get("max_time", type=int)  # New: time filter
+    max_price = request.args.get("max_price", type=float)  # New: price filter
+    
     recipes = []
 
     if ingredients:
+        # Base search
         recipes = search_recipes_by_ingredients(ingredients, number=12)
+        
+        # Apply sorting
+        if sort_by == "time_asc" and recipes:
+            # Sort by cooking time (ascending)
+            recipes = sorted(recipes, key=lambda r: r.get('readyInMinutes', 999))
+        elif sort_by == "time_desc" and recipes:
+            recipes = sorted(recipes, key=lambda r: r.get('readyInMinutes', 0), reverse=True)
+        elif sort_by == "price_asc" and recipes:
+            recipes = sorted(recipes, key=lambda r: r.get('pricePerServing', 999))
+        elif sort_by == "price_desc" and recipes:
+            recipes = sorted(recipes, key=lambda r: r.get('pricePerServing', 0), reverse=True)
+        
+        # Apply filters
+        if max_time and recipes:
+            recipes = [r for r in recipes if r.get('readyInMinutes', 999) <= max_time]
+        
+        if max_price and recipes:
+            recipes = [r for r in recipes if r.get('pricePerServing', 999) <= max_price * 100]  # Convert to cents
 
     return render_template(
         "recipe_section/recipebrowse.html",
         ingredients=ingredients,
         recipes=recipes,
+        sort_by=sort_by,
+        max_time=max_time,
+        max_price=max_price,
     )
 
 
 @app.route("/recipes/<int:recipe_id>")
 def recipe_detail(recipe_id: int):
-    """Show full details for a single recipe."""
     details = get_recipe_details(recipe_id)
     if details is None:
         flash("Could not load recipe details. Please try again later.", "danger")
@@ -103,9 +131,7 @@ def recipe_detail(recipe_id: int):
     )
 
 
-# -------------------------------------------------
-# Routes: Authentication (User)
-# -------------------------------------------------
+
 @app.route("/register", methods=["GET", "POST"])
 def user_register():
     if current_user.is_authenticated:
@@ -120,7 +146,6 @@ def user_register():
             flash("All fields are required.", "danger")
             return redirect(url_for("user_register"))
 
-        # Check uniqueness
         if User.query.filter_by(username=username).first():
             flash("Username already exists.", "danger")
             return redirect(url_for("user_register"))
@@ -129,7 +154,6 @@ def user_register():
             flash("Email already registered.", "danger")
             return redirect(url_for("user_register"))
 
-        # Create user
         new_user = User(username=username, email=email)
         new_user.set_password(password)
 
@@ -182,7 +206,6 @@ def user_dashboard():
 @app.route("/recipes/<int:recipe_id>/save", methods=["POST"])
 @login_required
 def save_recipe(recipe_id: int):
-    """Save a recipe to the current user's favourites."""
     recipe_name = request.form.get("recipe_name", "").strip() or "Recipe"
 
     existing = SavedRecipe.query.filter_by(
@@ -219,6 +242,49 @@ def unsave_recipe(recipe_id: int):
     db.session.commit()
     flash("Recipe removed from your favourites.", "success")
     return redirect(url_for("recipe_detail", recipe_id=recipe_id))
+
+# User post creation / deletion feature - week 5 update
+
+@app.route('/posts/create', methods=['POST'])
+@login_required
+def create_post():
+    spoonacular_id = request.form['recipe_id']
+    # fetch minimal info from cache or API, then create post
+    recipe = get_recipe_cached(spoonacular_id)
+    post = Post(user_id=current_user.id, spoonacular_id=spoonacular_id,
+                title=recipe['title'], image=recipe.get('image'))
+    db.session.add(post); db.session.commit()
+    return redirect(url_for('post_view', post_id=post.id))
+
+@app.route('/posts/<int:post_id>/delete', methods=['POST'])
+@login_required
+def delete_post(post_id):
+    p = Post.query.get_or_404(post_id)
+    if p.author != current_user and not current_user.is_admin:
+        abort(403)
+    db.session.delete(p); db.session.commit()
+    return redirect(url_for('index'))
+
+@app.route('/follow/<int:user_id>', methods=['POST'])
+@login_required
+def follow(user_id):
+    user_to_follow = User.query.get_or_404(user_id)
+    if user_to_follow == current_user:
+        flash("Can't follow yourself", 'warning')
+        return redirect(url_for('profile', user_id=user_id))
+    if not current_user.followed.filter_by(id=user_to_follow.id).first():
+        current_user.followed.append(user_to_follow)
+        db.session.commit()
+    return redirect(url_for('profile', user_id=user_id))
+
+@app.route('/unfollow/<int:user_id>', methods=['POST'])
+@login_required
+def unfollow(user_id):
+    user = User.query.get_or_404(user_id)
+    if current_user.followed.filter_by(id=user.id).first():
+        current_user.followed.remove(user)
+        db.session.commit()
+    return redirect(url_for('profile', user_id=user_id))
 
 
 
@@ -278,6 +344,83 @@ def add_to_shopping_list(recipe_id: int):
     flash("Recipe added to your shopping list.", "success")
     return redirect(url_for("shopping_list"))
 
+@app.route("/shopping-list/pdf")
+@login_required
+def shopping_list_pdf():
+    """Generate and download shopping list as PDF"""
+    
+    items = ShoppingList.query.filter_by(user_id=current_user.id).order_by(
+        ShoppingList.created_at.desc()
+    ).all()
+    
+    if not items:
+        flash('Your shopping list is empty!', 'info')
+        return redirect(url_for('shopping_list'))
+    
+    # Create PDF in memory
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch)
+    elements = []
+    
+    # Styles
+    styles = getSampleStyleSheet()
+    title_style = styles['Title']
+    
+    # Add title
+    title = Paragraph(f"Shopping List - {current_user.username}", title_style)
+    elements.append(title)
+    elements.append(Spacer(1, 0.3 * inch))
+    
+    # Process each recipe in the shopping list
+    for item in items:
+        # Recipe name as a heading
+        recipe_heading = Paragraph(
+            f"<b>{item.recipe_name}</b> (Recipe #{item.recipe_id})",
+            styles['Heading2']
+        )
+        elements.append(recipe_heading)
+        elements.append(Spacer(1, 0.1 * inch))
+        
+        # Get ingredients
+        ingredients = item.ingredients()
+        
+        if ingredients:
+            # Create table data
+            data = [['☐', 'Ingredient']]  # Header
+            for ing in ingredients:
+                data.append(['☐', ing])
+            
+            # Create table
+            table = Table(data, colWidths=[0.4*inch, 5*inch])
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ]))
+            
+            elements.append(table)
+            elements.append(Spacer(1, 0.3 * inch))
+    
+    # Build PDF
+    doc.build(elements)
+    
+    # Get PDF data
+    pdf_data = buffer.getvalue()
+    buffer.close()
+    
+    # Create response
+    response = make_response(pdf_data)
+    response.headers['Content-Type'] = 'application/pdf'
+    response.headers['Content-Disposition'] = f'attachment; filename=shopping_list_{current_user.username}.pdf'
+    
+    return response
+
+
 
 @app.route("/shopping-list/<int:item_id>/remove", methods=["POST"])
 @login_required
@@ -297,6 +440,18 @@ def remove_from_shopping_list(item_id: int):
 # -------------------------------------------------
 # Routes: Admin
 # -------------------------------------------------
+
+
+def admin_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if not current_user.is_authenticated or not current_user.is_admin:
+            abort(403)
+        return f(*args, **kwargs)
+    return wrapper
+
+
+
 @app.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
     if current_user.is_authenticated and current_user.is_admin:
@@ -320,6 +475,7 @@ def admin_login():
 
 @app.route("/admin/dashboard")
 @login_required
+@admin_required
 def admin_dashboard():
     if not current_user.is_admin:
         flash("Access denied. Admin only.", "danger")
@@ -327,6 +483,23 @@ def admin_dashboard():
 
     users = User.query.order_by(User.created_at.desc()).all()
     return render_template("admin/admin_dashboard.html", users=users)
+
+#week 5 - added admin delete user route
+@app.route("/admin/users/<int:user_id>/delete", methods=["POST"])
+@login_required
+@admin_required
+def admin_delete_user(user_id: int):
+    """Delete a user (admin only)"""
+    user = User.query.get_or_404(user_id)
+    
+    if user.is_admin:
+        flash("Cannot delete admin users.", "danger")
+        return redirect(url_for('admin_dashboard'))
+    
+    db.session.delete(user)
+    db.session.commit()
+    flash(f"User '{user.username}' has been deleted.", "success")
+    return redirect(url_for('admin_dashboard'))
 
 
 # -------------------------------------------------
